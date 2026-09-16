@@ -1,0 +1,1237 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jutsu Hands — Face Boom (Multi-Sound)</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+
+    <style>
+        html,
+        body {
+            margin: 0;
+            height: 100%;
+            background: #000;
+            overflow: hidden;
+            font-family: system-ui, sans-serif;
+        }
+        
+        .layer {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+        
+        #cam {
+            z-index: 0;
+        }
+        
+        #skeleton {
+            z-index: 2;
+            pointer-events: none;
+            contain: strict;
+        }
+        
+        .vignette {
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(ellipse at center, transparent 35%, rgba(0, 0, 0, 0.55) 100%);
+            pointer-events: none;
+            z-index: 4;
+        }
+        
+        .fx {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 1500px;
+            height: auto;
+            pointer-events: none;
+            mix-blend-mode: screen;
+            opacity: 0;
+            will-change: transform, opacity;
+            transform: translate3d(-9999px, -9999px, 0) translate(-50%, -50%);
+            backface-visibility: hidden;
+            contain: layout style paint;
+        }
+        
+        .fx[data-effect="rasengan"] {
+            z-index: 10;
+        }
+        
+        .fx[data-effect="chidori"] {
+            z-index: 10;
+            filter: hue-rotate(180deg) brightness(1.4);
+            width: 900px;
+        }
+        
+        .fx[data-effect="fireball"] {
+            z-index: 10;
+            filter: hue-rotate(-40deg) saturate(2) brightness(1.3);
+            width: 1200px;
+        }
+        
+        .fx[data-effect="beam"] {
+            z-index: 10;
+            filter: hue-rotate(90deg) saturate(1.5);
+            width: 700px;
+        }
+        
+        .projectile {
+            z-index: 11;
+            width: 700px;
+        }
+        
+        .projectile[data-effect="rasengan"] {
+            filter: none;
+        }
+        
+        .projectile[data-effect="chidori"] {
+            filter: hue-rotate(180deg) brightness(1.4);
+        }
+        
+        .projectile[data-effect="fireball"] {
+            filter: hue-rotate(-40deg) saturate(2) brightness(1.3);
+        }
+        
+        .projectile[data-effect="beam"] {
+            filter: hue-rotate(90deg) saturate(1.5);
+        }
+        
+        #flash {
+            position: fixed;
+            inset: 0;
+            background: #fff;
+            opacity: 0;
+            pointer-events: none;
+            z-index: 20;
+            will-change: opacity;
+        }
+        
+        .shockwave {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100px;
+            height: 100px;
+            margin-left: -50px;
+            margin-top: -50px;
+            border-radius: 50%;
+            border: 4px solid #ffd166;
+            box-shadow: 0 0 40px 10px rgba(255, 140, 40, 0.9), inset 0 0 40px 10px rgba(255, 220, 120, 0.7);
+            pointer-events: none;
+            z-index: 15;
+            will-change: transform, opacity;
+            mix-blend-mode: screen;
+        }
+        
+        .particle {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 14px;
+            height: 14px;
+            margin-left: -7px;
+            margin-top: -7px;
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 14;
+            mix-blend-mode: screen;
+            will-change: transform, opacity;
+            box-shadow: 0 0 12px currentColor;
+            background: currentColor;
+        }
+        
+        body.shake #cam,
+        body.shake #skeleton,
+        body.shake .vignette {
+            animation: shake 0.35s ease-out;
+        }
+        
+        #hint {
+            position: fixed;
+            bottom: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #cfe9ff;
+            font-size: 13px;
+            letter-spacing: 0.04em;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 8px 14px;
+            border-radius: 12px;
+            z-index: 6;
+            pointer-events: none;
+            text-align: center;
+            line-height: 1.5;
+        }
+        
+        #hint b {
+            color: #fff;
+        }
+        
+        @keyframes shake {
+            0% {
+                transform: scaleX(-1);
+            }
+            15% {
+                transform: scaleX(-1);
+            }
+            30% {
+                transform: scaleX(-1);
+            }
+            45% {
+                transform: scaleX(-1);
+            }
+            60% {
+                transform: scaleX(-1);
+            }
+            75% {
+                transform: scaleX(-1);
+            }
+            100% {
+                transform: scaleX(-1);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <video id="cam" class="layer" autoplay playsinline muted></video>
+    <canvas id="skeleton" class="layer"></canvas>
+    <div class="vignette"></div>
+    <div id="flash"></div>
+
+    <!-- In-hand effect templates -->
+    <video class="fx" data-effect="rasengan" src="rasengan.mp4" muted loop playsinline preload="auto"></video>
+    <video class="fx" data-effect="chidori" src="rasengan.mp4" muted loop playsinline preload="auto"></video>
+    <video class="fx" data-effect="fireball" src="rasengan.mp4" muted loop playsinline preload="auto"></video>
+    <video class="fx" data-effect="beam" src="rasengan.mp4" muted loop playsinline preload="auto"></video>
+
+    <!-- ============================================================ -->
+    <!-- SOUND ASSETS: Change these paths to match your audio files    -->
+    <!-- ============================================================ -->
+    <!-- Charge sounds (looped while charging) -->
+    <audio id="charge-rasengan" src="assets/rasengan.mpeg" loop></audio>
+    <audio id="charge-chidori" src="assets/charge-chidori.mpeg" loop></audio>
+    <audio id="charge-fireball" src="assets/charge-fireball.mpeg" loop></audio>
+    <audio id="charge-beam" src="assets/charge-beam.mpeg" loop></audio>
+
+    <!-- Throw sounds (one-shot when released) -->
+    <!-- Use the actual shipped assets and fall back to the main rasengan throw when a specific variant is unavailable -->
+    <audio id="throw-rasengan" src="assets/throw-rasengan.mpeg" preload="auto"></audio>
+    <audio id="throw-chidori" src="assets/throw-rasengan.mpeg" preload="auto"></audio>
+    <audio id="throw-fireball" src="assets/throw-rasengan.mpeg" preload="auto"></audio>
+    <audio id="throw-beam" src="assets/throw-rasengan.mpeg" preload="auto"></audio>
+
+    <!-- Explosion sounds per effect (played on impact) -->
+    <audio id="boom-rasengan" src="assets/boom.mpeg" preload="auto"></audio>
+    <audio id="boom-chidori" src="assets/boom.mpeg" preload="auto"></audio>
+    <audio id="boom-fireball" src="assets/boom.mpeg" preload="auto"></audio>
+    <audio id="boom-beam" src="assets/boom.mpeg" preload="auto"></audio>
+
+    <!-- Fallback generic boom (used if per-effect boom missing) -->
+    <audio id="boom" src="assets/boom.mpeg" preload="auto"></audio>
+
+    <div id="hint">
+        <b>✋</b> Rasengan · <b>✊</b> Chidori · <b>🤟</b> Fireball · <b>☝️</b> Beam &nbsp;|&nbsp; <b>Charge → close fist → throw at a face 💥</b>
+    </div>
+
+    <script>
+        // ============================================================
+        // CONFIG
+        // ============================================================
+        const CFG = {
+            detectionIntervalMs: 33,
+            modelComplexity: 0,
+            minDetectionConfidence: 0.6,
+            minTrackingConfidence: 0.6,
+            maxNumHands: 2,
+
+            faceModel: 'short',
+            faceMinConfidence: 0.5,
+            faceIntervalMs: 100,
+
+            signStableFrames: 3,
+            throwRequiresFrames: 2,
+
+            chargeGain: 0.10,
+            chargeDecay: 0.20,
+            throwMinCharge: 0.45,
+            throwCooldown: 0.4,
+
+            projSpeed: 1600,
+            projDecay: 0.35,
+            projLife: 2.2,
+            projScale0: 0.5,
+            projScale1: 1.6,
+            projPoolSize: 24,
+
+            homingStrength: 6.0,
+            homingConeCos: 0.2,
+            homingRange: 900,
+
+            impactRadius: 90,
+            impactFuseLife: 2.2,
+
+            explosionShockwaveMs: 550,
+            explosionParticles: 22,
+            explosionFlashMs: 180,
+            shakeMs: 350,
+        };
+
+        // ============================================================
+        // DOM refs
+        // ============================================================
+        const camVideo = document.getElementById('cam');
+        const canvas = document.getElementById('skeleton');
+        const pen = canvas.getContext('2d', {
+            alpha: true,
+            desynchronized: true
+        });
+        const flashEl = document.getElementById('flash');
+
+        // ============================================================
+        // SOUND MANAGER
+        // ============================================================
+        // Per-effect charge sounds (looped, volume scales with charge)
+        const chargeSounds = {
+            rasengan: document.getElementById('charge-rasengan'),
+            chidori: document.getElementById('charge-chidori'),
+            fireball: document.getElementById('charge-fireball'),
+            beam: document.getElementById('charge-beam'),
+        };
+        // Per-effect throw sounds (one-shot)
+        const throwSounds = {
+            rasengan: document.getElementById('throw-rasengan'),
+            chidori: document.getElementById('throw-chidori'),
+            fireball: document.getElementById('throw-fireball'),
+            beam: document.getElementById('throw-beam'),
+        };
+        // Per-effect explosion sounds (one-shot)
+        const boomSounds = {
+            rasengan: document.getElementById('boom-rasengan'),
+            chidori: document.getElementById('boom-chidori'),
+            fireball: document.getElementById('boom-fireball'),
+            beam: document.getElementById('boom-beam'),
+        };
+        const fallbackBoom = document.getElementById('boom');
+
+        // Track which charge sound is currently playing per slot (0=left,1=right)
+        const activeChargeSounds = [null, null];
+        // Track volumes so we can smoothly adjust
+        let audioUnlocked = false;
+
+        // Unlock audio on first user interaction (browser policy)
+        function unlockAudio() {
+            if (audioUnlocked) return;
+            audioUnlocked = true;
+            // Play + pause each sound at zero volume to prime them
+            const all = [
+                ...Object.values(chargeSounds),
+                ...Object.values(throwSounds),
+                ...Object.values(boomSounds),
+                fallbackBoom
+            ].filter(Boolean);
+            for (const el of all) {
+                try {
+                    el.volume = 0;
+                    const p = el.play();
+                    if (p && p.then) p.then(() => {
+                        el.pause();
+                        el.currentTime = 0;
+                        el.volume = 1;
+                    }).catch(() => {});
+                    else {
+                        el.pause();
+                        el.currentTime = 0;
+                        el.volume = 1;
+                    }
+                } catch (_) {}
+            }
+        }
+
+        // ---- Charge sound handling ----
+        function playChargeSound(effect, slot) {
+            // If the same slot already has the same effect charging, do nothing
+            const current = activeChargeSounds[slot];
+            if (current && current.effect === effect) return;
+
+            // Stop any existing charge sound for this slot
+            stopChargeSound(slot);
+
+            const el = chargeSounds[effect];
+            if (!el) return;
+            try {
+                el.currentTime = 0;
+                el.volume = 0;
+                const p = el.play();
+                if (p && p.catch) p.catch(() => {});
+                activeChargeSounds[slot] = {
+                    el,
+                    effect
+                };
+            } catch (_) {}
+        }
+
+        function updateChargeSoundVolume(effect, slot, charge) {
+            const current = activeChargeSounds[slot];
+            if (!current || current.effect !== effect) return;
+            // Map charge 0..1 to volume 0.05..0.4
+            const vol = Math.min(0.4, 0.05 + charge * 0.35);
+            try {
+                current.el.volume = vol;
+            } catch (_) {}
+        }
+
+        function stopChargeSound(slot) {
+            const current = activeChargeSounds[slot];
+            if (!current) return;
+            try {
+                // Fade out quickly
+                const el = current.el;
+                const startVol = el.volume;
+                const t0 = performance.now();
+                const fade = () => {
+                    const dt = (performance.now() - t0) / 150;
+                    if (dt >= 1) {
+                        try {
+                            el.pause();
+                            el.currentTime = 0;
+                        } catch (_) {}
+                        return;
+                    }
+                    try {
+                        el.volume = Math.max(0, startVol * (1 - dt));
+                    } catch (_) {}
+                    requestAnimationFrame(fade);
+                };
+                requestAnimationFrame(fade);
+            } catch (_) {
+                try {
+                    current.el.pause();
+                } catch (_) {}
+            }
+            activeChargeSounds[slot] = null;
+        }
+
+        // ---- Throw sound ----
+        function playThrowSound(effect) {
+            const el = throwSounds[effect];
+            if (!el) return;
+            try {
+                el.currentTime = 0;
+                el.volume = 0.8;
+                const p = el.play();
+                if (p && p.catch) p.catch(() => {});
+            } catch (_) {}
+        }
+
+        // ---- Explosion sound ----
+        function playBoomSound(effect, power = 1) {
+            // Prefer per-effect sound; fall back to generic
+            const el = boomSounds[effect] || fallbackBoom;
+            if (!el) return;
+            try {
+                el.currentTime = 0;
+                el.volume = Math.min(1, 0.8 * power);
+                const p = el.play();
+                if (p && p.catch) p.catch(() => {});
+            } catch (_) {}
+        }
+
+        // ============================================================
+        // Window size
+        // ============================================================
+        let VW = window.innerWidth;
+        let VH = window.innerHeight;
+        addEventListener('resize', () => {
+            VW = window.innerWidth;
+            VH = window.innerHeight;
+        }, {
+            passive: true
+        });
+
+        // ============================================================
+        // FX pool
+        // ============================================================
+        const fxTemplates = {};
+        document.querySelectorAll('.fx').forEach(v => {
+            fxTemplates[v.dataset.effect] = v;
+        });
+        Object.values(fxTemplates).forEach(v => {
+            v.style.display = 'none';
+        });
+
+        const fxPool = {
+            rasengan: [],
+            chidori: [],
+            fireball: [],
+            beam: []
+        };
+        for (const effect in fxTemplates) {
+            for (let i = 0; i < 2; i++) {
+                const el = fxTemplates[effect].cloneNode(true);
+                el.removeAttribute('id');
+                el.style.display = '';
+                el.pause();
+                document.body.appendChild(el);
+                fxPool[effect].push({
+                    el,
+                    inUse: false,
+                    effect: null,
+                    slot: -1
+                });
+            }
+        }
+
+        // ============================================================
+        // Projectile pool
+        // ============================================================
+        const projPool = [];
+        for (let i = 0; i < CFG.projPoolSize; i++) {
+            const el = fxTemplates.rasengan.cloneNode(true);
+            el.removeAttribute('id');
+            el.classList.add('projectile');
+            el.style.display = 'none';
+            el.pause();
+            document.body.appendChild(el);
+            projPool.push({
+                el,
+                active: false,
+                effect: null,
+                x: 0,
+                y: 0,
+                vx: 0,
+                vy: 0,
+                life: 0,
+                maxLife: 0,
+                charge: 0,
+                rotation: 0,
+            });
+        }
+
+        // ============================================================
+        // Video -> screen mapping
+        // ============================================================
+        function getVideoMetrics() {
+            const vw = camVideo.videoWidth || 1280;
+            const vh = camVideo.videoHeight || 720;
+            const scale = Math.max(VW / vw, VH / vh);
+            return {
+                vw,
+                vh,
+                scale,
+                renderedW: vw * scale,
+                renderedH: vh * scale,
+                cropX: (vw * scale - VW) * 0.5,
+                cropY: (vh * scale - VH) * 0.5
+            };
+        }
+
+        function normalizedToScreen(x, y) {
+            const m = getVideoMetrics();
+            return {
+                x: (1 - x) * m.renderedW - m.cropX,
+                y: y * m.renderedH - m.cropY
+            };
+        }
+
+        function normalizedVectorToScreen(dx, dy) {
+            const m = getVideoMetrics();
+            return {
+                x: -dx * m.renderedW,
+                y: dy * m.renderedH
+            };
+        }
+
+        // ============================================================
+        // Face detection
+        // ============================================================
+        const faces = [];
+        let facesDirty = true;
+
+        function onFaceResults(res) {
+            faces.length = 0;
+            if (res.detections) {
+                for (const d of res.detections) {
+                    const bb = d.boundingBox;
+                    const center = normalizedToScreen(bb.xCenter, bb.yCenter);
+                    const m = getVideoMetrics();
+                    const fw = bb.width * m.renderedW;
+                    const fh = bb.height * m.renderedH;
+                    faces.push({
+                        x: center.x,
+                        y: center.y,
+                        w: fw,
+                        h: fh,
+                        r: Math.max(fw, fh) * 0.6,
+                    });
+                }
+            }
+            facesDirty = false;
+        }
+
+        // ============================================================
+        // Explosions
+        // ============================================================
+        const shockwaves = [];
+        const particles = [];
+        let flashUntil = 0;
+        let shakeUntil = 0;
+
+        const particlePool = [];
+        for (let i = 0; i < CFG.explosionParticles * 2; i++) {
+            const el = document.createElement('div');
+            el.className = 'particle';
+            el.style.display = 'none';
+            document.body.appendChild(el);
+            particlePool.push({
+                el,
+                inUse: false
+            });
+        }
+
+        const PARTICLE_COLORS = ['#ffd166', '#ff8c2a', '#ff3d00', '#fff2b2', '#ffb347'];
+
+        function explode(x, y, power = 1, effect = 'rasengan') {
+            // Shockwave
+            const sw = document.createElement('div');
+            sw.className = 'shockwave';
+            sw.style.transform = `translate3d(${x}px, ${y}px, 0) scale(0.1)`;
+            sw.style.opacity = 1;
+            document.body.appendChild(sw);
+            shockwaves.push({
+                el: sw,
+                t: 0,
+                max: CFG.explosionShockwaveMs / 1000
+            });
+
+            // Particles
+            const count = Math.round(CFG.explosionParticles * power);
+            let spawned = 0;
+            for (let i = 0; i < particlePool.length && spawned < count; i++) {
+                const p = particlePool[i];
+                if (p.inUse) continue;
+                p.inUse = true;
+
+                const angle = Math.random() * Math.PI * 2;
+                const speed = (400 + Math.random() * 700) * power;
+                const color = PARTICLE_COLORS[(Math.random() * PARTICLE_COLORS.length) | 0];
+
+                p.el.style.display = '';
+                p.el.style.color = color;
+                p.el.style.opacity = 1;
+                p.el.style.transform = `translate3d(${x}px, ${y}px, 0) scale(1)`;
+
+                particles.push({
+                    pool: p,
+                    x,
+                    y,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    t: 0,
+                    max: 0.6 + Math.random() * 0.4,
+                });
+                spawned++;
+            }
+
+            // Flash
+            flashEl.style.opacity = Math.min(1, 0.6 * power);
+            flashUntil = performance.now() + CFG.explosionFlashMs;
+
+            // Screen shake
+            document.body.classList.remove('shake');
+            void document.body.offsetWidth;
+            document.body.classList.add('shake');
+            shakeUntil = performance.now() + CFG.shakeMs;
+
+            // ---- SOUND: per-effect explosion ----
+            playBoomSound(effect, power);
+        }
+
+        function updateExplosions(dt, now) {
+            for (let i = shockwaves.length - 1; i >= 0; i--) {
+                const s = shockwaves[i];
+                s.t += dt;
+                const k = s.t / s.max;
+                if (k >= 1) {
+                    s.el.remove();
+                    shockwaves.splice(i, 1);
+                    continue;
+                }
+                const ease = 1 - Math.pow(1 - k, 3);
+                const scale = 0.1 + ease * 8;
+                s.el.style.transform = s.el.style.transform.replace(/scale\([^)]+\)/, `scale(${scale})`);
+                s.el.style.opacity = (1 - k).toFixed(3);
+            }
+
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.t += dt;
+                const k = p.t / p.max;
+                if (k >= 1) {
+                    p.pool.el.style.display = 'none';
+                    p.pool.inUse = false;
+                    particles.splice(i, 1);
+                    continue;
+                }
+                p.vx *= Math.pow(0.05, dt);
+                p.vy *= Math.pow(0.05, dt);
+                p.vy += 400 * dt;
+                p.x += p.vx * dt;
+                p.y += p.vy * dt;
+                const alpha = 1 - k;
+                const size = 1 - k * 0.6;
+                p.pool.el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0) scale(${size})`;
+                p.pool.el.style.opacity = alpha.toFixed(3);
+            }
+
+            if (flashUntil && now >= flashUntil) {
+                flashEl.style.opacity = 0;
+                flashUntil = 0;
+            }
+            if (shakeUntil && now >= shakeUntil) {
+                document.body.classList.remove('shake');
+                shakeUntil = 0;
+            }
+        }
+
+        // ============================================================
+        // Hand helpers
+        // ============================================================
+        const FINGER_TIPS = [8, 12, 16, 20];
+        const FINGER_KNUCKLES = [6, 10, 14, 18];
+        const extendedBuf = [false, false, false, false];
+
+        function getExtendedFingers(lm) {
+            const wx = lm[0].x,
+                wy = lm[0].y;
+            for (let i = 0; i < 4; i++) {
+                const t = lm[FINGER_TIPS[i]];
+                const k = lm[FINGER_KNUCKLES[i]];
+                const dt = (t.x - wx) ** 2 + (t.y - wy) ** 2;
+                const dk = (k.x - wx) ** 2 + (k.y - wy) ** 2;
+                extendedBuf[i] = dt > dk;
+            }
+            return extendedBuf;
+        }
+
+        function classifySign(lm) {
+            const [idx, mid, ring, pinky] = getExtendedFingers(lm);
+            const count = (idx ? 1 : 0) + (mid ? 1 : 0) + (ring ? 1 : 0) + (pinky ? 1 : 0);
+            const thumb = (lm[4].x - lm[2].x) ** 2 + (lm[4].y - lm[2].y) ** 2 > 0.01;
+
+            // Most stable and human-friendly order: closed fist => chidori, two or three fingers => rasengan,
+            // index-only => beam, index + pinky => fireball, otherwise no sign.
+            if (count === 0 && !thumb) return 'chidori';
+            if (count >= 3 && !thumb) return 'rasengan';
+            if (idx && !mid && !ring && !pinky) return 'beam';
+            if (idx && !mid && !ring && pinky) return 'fireball';
+            if (count >= 2 && !thumb) return 'rasengan';
+            return null;
+        }
+
+        const aimOut = {
+            dx: 0,
+            dy: 0
+        };
+
+        function smoothAim(current, target, factor = 0.28) {
+            current.dx = current.dx * (1 - factor) + target.dx * factor;
+            current.dy = current.dy * (1 - factor) + target.dy * factor;
+            const len = Math.hypot(current.dx, current.dy) || 1;
+            current.dx /= len;
+            current.dy /= len;
+        }
+
+        function getAimDirection(lm, out) {
+            let from = lm[9],
+                to = lm[12];
+            const [idx, mid] = getExtendedFingers(lm);
+            if (idx) {
+                from = lm[5];
+                to = lm[8];
+            } else if (mid) {
+                from = lm[9];
+                to = lm[12];
+            }
+
+            const a = normalizedToScreen(from.x, from.y);
+            const b = normalizedToScreen(to.x, to.y);
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const len = Math.hypot(dx, dy) || 1;
+            out.dx = dx / len;
+            out.dy = dy / len;
+        }
+
+        const BEAM_ASSET_ROTATION = 0;
+
+        function getBeamRotation(lm) {
+            const from = normalizedToScreen(lm[5].x, lm[5].y);
+            const to = normalizedToScreen(lm[8].x, lm[8].y);
+            return Math.atan2(to.y - from.y, to.x - from.x) * 180 / Math.PI + BEAM_ASSET_ROTATION;
+        }
+
+        // ============================================================
+        // Hand state
+        // ============================================================
+        const handState = [{
+            effect: null,
+            charge: 0,
+            prevSign: null,
+            cooldown: 0,
+            stableSign: null,
+            stableCount: 0,
+            fistCount: 0,
+            lastAim: {
+                dx: 1,
+                dy: 0
+            },
+            fxHandle: null
+        }, {
+            effect: null,
+            charge: 0,
+            prevSign: null,
+            cooldown: 0,
+            stableSign: null,
+            stableCount: 0,
+            fistCount: 0,
+            lastAim: {
+                dx: 1,
+                dy: 0
+            },
+            fxHandle: null
+        }];
+
+        function acquireFx(effect, slot, st) {
+            if (st.fxHandle && st.fxHandle.effect === effect) return st.fxHandle;
+            releaseFx(st);
+            const pool = fxPool[effect];
+            if (!pool) return null;
+            const preferred = pool[slot];
+            const handle = (!preferred.inUse) ? preferred : pool.find(h => !h.inUse);
+            if (!handle) return null;
+            handle.inUse = true;
+            handle.effect = effect;
+            handle.slot = slot;
+            handle.el.style.display = '';
+            handle.el.style.opacity = 0;
+            if (handle.el.paused) {
+                handle.el.currentTime = 0;
+                handle.el.play().catch(() => {});
+            }
+            st.fxHandle = handle;
+            return handle;
+        }
+
+        function releaseFx(st) {
+            const h = st.fxHandle;
+            if (!h) return;
+            h.el.style.opacity = 0;
+            h.el.style.transform = 'translate3d(-9999px, -9999px, 0) translate(-50%, -50%)';
+            h.el.pause();
+            h.inUse = false;
+            h.effect = null;
+            st.fxHandle = null;
+        }
+
+        // ============================================================
+        // Projectiles
+        // ============================================================
+        function spawnProjectile(effect, x, y, dx, dy, charge) {
+            let slot = projPool.find(p => !p.active);
+            if (!slot) {
+                slot = projPool.reduce((a, b) => (a.life > b.life ? a : b));
+                slot.el.style.display = 'none';
+            }
+            slot.active = true;
+            slot.effect = effect;
+            slot.el.dataset.effect = effect;
+            slot.x = x;
+            slot.y = y;
+            const speed = CFG.projSpeed * (0.6 + charge * 0.4);
+            slot.vx = dx * speed;
+            slot.vy = dy * speed;
+            slot.life = 0;
+            slot.maxLife = CFG.projLife;
+            slot.charge = charge;
+            slot.rotation = Math.atan2(dy, dx) * 180 / Math.PI;
+            slot.homeFace = null;
+
+            const el = slot.el;
+            el.style.display = '';
+            el.style.opacity = 1;
+            el.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -50%) scale(${CFG.projScale0}) rotate(${slot.rotation}deg)`;
+            el.currentTime = 0;
+            el.play().catch(() => {});
+
+            // ---- SOUND: per-effect throw ----
+            playThrowSound(effect);
+        }
+
+        function updateProjectiles(dt) {
+            for (let i = 0; i < projPool.length; i++) {
+                const p = projPool[i];
+                if (!p.active) continue;
+
+                p.life += dt;
+
+                if (faces.length) {
+                    const speed = Math.hypot(p.vx, p.vy) || 1;
+                    const nx = p.vx / speed;
+                    const ny = p.vy / speed;
+
+                    let best = null,
+                        bestDist = Infinity;
+                    for (const f of faces) {
+                        const dx = f.x - p.x;
+                        const dy = f.y - p.y;
+                        const dist = Math.hypot(dx, dy);
+                        if (dist > CFG.homingRange) continue;
+                        const cos = (dx * nx + dy * ny) / (dist || 1);
+                        if (cos < CFG.homingConeCos) continue;
+                        if (dist < bestDist) {
+                            bestDist = dist;
+                            best = f;
+                        }
+                    }
+
+                    if (best) {
+                        const dx = best.x - p.x;
+                        const dy = best.y - p.y;
+                        const dist = Math.hypot(dx, dy) || 1;
+                        const tx = dx / dist * speed;
+                        const ty = dy / dist * speed;
+                        const steer = Math.min(1, CFG.homingStrength * dt);
+                        p.vx += (tx - p.vx) * steer;
+                        p.vy += (ty - p.vy) * steer;
+                        p.homeFace = best;
+                        if (p.effect === 'beam') {
+                            p.rotation = Math.atan2(p.vy, p.vx) * 180 / Math.PI + BEAM_ASSET_ROTATION;
+                        }
+                    }
+                }
+
+                const drag = Math.pow(CFG.projDecay, dt);
+                p.vx *= drag;
+                p.vy *= drag;
+                p.x += p.vx * dt;
+                p.y += p.vy * dt;
+
+                let hit = false;
+                for (const f of faces) {
+                    const dx = f.x - p.x;
+                    const dy = f.y - p.y;
+                    const dist = Math.hypot(dx, dy);
+                    if (dist < CFG.impactRadius + f.r * 0.3) {
+                        hit = true;
+                        break;
+                    }
+                }
+
+                const t = p.life / p.maxLife;
+                const scale = CFG.projScale0 + (CFG.projScale1 - CFG.projScale0) * t;
+                const alpha = Math.max(0, 1 - t);
+
+                const projectileRotation = p.effect === 'beam' ? p.rotation : t * 180;
+
+                p.el.style.transform =
+                    `translate3d(${p.x}px, ${p.y}px, 0) translate(-50%, -50%) scale(${scale}) rotate(${projectileRotation}deg)`;
+                p.el.style.opacity = alpha;
+
+                if (hit || p.life >= p.maxLife ||
+                    p.x < -VW * 0.5 || p.x > VW * 1.5 ||
+                    p.y < -VH * 0.5 || p.y > VH * 1.5) {
+                    const power = hit ? 1.0 : 0.6;
+                    // ---- SOUND: pass effect to explosion ----
+                    explode(p.x, p.y, power, p.effect);
+                    p.active = false;
+                    p.el.style.display = 'none';
+                    p.el.pause();
+                }
+            }
+        }
+
+        // ============================================================
+        // Skeleton paint
+        // ============================================================
+        let canvasW = 0,
+            canvasH = 0;
+
+        function ensureCanvasSize(w, h) {
+            const W = Math.round((w || 1280) * 0.5);
+            const H = Math.round((h || 720) * 0.5);
+            if (W !== canvasW || H !== canvasH) {
+                canvas.width = W;
+                canvas.height = H;
+                canvasW = W;
+                canvasH = H;
+            }
+        }
+
+        const PALETTES = {
+            Left: {
+                bone: '#ff8a3d',
+                joint: '#fff36a',
+                glow: '#ff5e1a'
+            },
+            Right: {
+                bone: '#62f0ff',
+                joint: '#ff66e0',
+                glow: '#1aa6ff'
+            },
+        };
+
+        function paintSkeleton(lm, colors) {
+            pen.save();
+            pen.shadowBlur = 14;
+            pen.shadowColor = colors.glow;
+            pen.strokeStyle = colors.bone;
+            pen.lineWidth = 3;
+            pen.lineCap = 'round';
+            for (let i = 0; i < HAND_CONNECTIONS.length; i++) {
+                const [a, b] = HAND_CONNECTIONS[i];
+                pen.beginPath();
+                pen.moveTo(lm[a].x * canvasW, lm[a].y * canvasH);
+                pen.lineTo(lm[b].x * canvasW, lm[b].y * canvasH);
+                pen.stroke();
+            }
+            pen.restore();
+
+            pen.save();
+            pen.shadowBlur = 8;
+            pen.shadowColor = colors.glow;
+            pen.fillStyle = colors.joint;
+            for (let i = 0; i < lm.length; i++) {
+                pen.beginPath();
+                pen.arc(lm[i].x * canvasW, lm[i].y * canvasH, 3.5, 0, Math.PI * 2);
+                pen.fill();
+            }
+            pen.restore();
+        }
+
+        // ============================================================
+        // Main hands callback
+        // ============================================================
+        let lastTime = performance.now();
+
+        function onResults(res) {
+            const now = performance.now();
+            const dt = Math.min(0.05, (now - lastTime) / 1000);
+            lastTime = now;
+
+            ensureCanvasSize(camVideo.videoWidth, camVideo.videoHeight);
+            pen.clearRect(0, 0, canvasW, canvasH);
+
+            const seen = [false, false];
+
+            if (res.multiHandLandmarks && res.multiHandedness) {
+                for (let i = 0; i < res.multiHandLandmarks.length; i++) {
+                    const lm = res.multiHandLandmarks[i];
+                    const label = res.multiHandedness[i].label;
+                    const slot = label === 'Right' ? 1 : 0;
+                    seen[slot] = true;
+
+                    paintSkeleton(lm, PALETTES[label] || PALETTES.Left);
+
+                    const rawSign = classifySign(lm);
+                    const st = handState[slot];
+
+                    if (rawSign === st.stableSign) st.stableCount++;
+                    else {
+                        st.stableSign = rawSign;
+                        st.stableCount = 1;
+                    }
+                    const stable = st.stableCount >= CFG.signStableFrames;
+                    const sign = stable ? st.stableSign : st.prevSign;
+
+                    const fistNow = (rawSign === null || rawSign === 'chidori' || (rawSign && rawSign === 'rasengan' && st.charge > 0.7));
+                    if (fistNow) st.fistCount++;
+                    else st.fistCount = 0;
+
+                    const wasCharging = st.effect && st.charge > CFG.throwMinCharge;
+                    const becameThrow = fistNow && st.fistCount >= CFG.throwRequiresFrames &&
+                        st.prevSign && st.prevSign !== rawSign;
+
+                    if (wasCharging && becameThrow && st.cooldown <= 0) {
+                        const midKnk = normalizedToScreen(lm[9].x, lm[9].y);
+                        const wrist = normalizedToScreen(lm[0].x, lm[0].y);
+                        let origin;
+                        if (st.effect === 'beam') {
+                            const tip = normalizedToScreen(lm[8].x, lm[8].y);
+                            origin = tip;
+                        } else {
+                            origin = {
+                                x: (wrist.x + midKnk.x) * 0.5,
+                                y: (wrist.y + midKnk.y) * 0.5
+                            };
+                        }
+                        getAimDirection(lm, aimOut);
+                        const aim = (st.lastAim && Number.isFinite(st.lastAim.dx)) ? st.lastAim : aimOut;
+                        spawnProjectile(st.effect, origin.x, origin.y, aim.dx, aim.dy, st.charge);
+                        st.charge = 0;
+                        st.cooldown = CFG.throwCooldown;
+                        st.fistCount = 0;
+
+                        // Stop the charge sound for this slot since we just threw
+                        stopChargeSound(slot);
+                    }
+
+                    if (st.cooldown > 0) st.cooldown = Math.max(0, st.cooldown - dt);
+
+                    if (sign !== st.prevSign) {
+                        st.prevSign = sign;
+                        if (!sign) st.charge = Math.max(0, st.charge - CFG.chargeDecay * 3);
+                    }
+                    st.effect = sign;
+
+                    if (sign && st.cooldown <= 0) {
+                        getAimDirection(lm, aimOut);
+                        smoothAim(st.lastAim, aimOut, 0.33);
+                        st.charge = Math.min(1, st.charge + CFG.chargeGain * (1.15 - Math.abs(st.lastAim.dx) * 0.15));
+
+                        const handle = acquireFx(sign, slot, st);
+                        if (handle) {
+                            const midKnk = normalizedToScreen(lm[9].x, lm[9].y);
+                            const wrist = normalizedToScreen(lm[0].x, lm[0].y);
+                            let anchor;
+                            if (sign === 'beam') {
+                                const tip = normalizedToScreen(lm[8].x, lm[8].y);
+                                anchor = tip;
+                            } else {
+                                anchor = {
+                                    x: (wrist.x + midKnk.x) * 0.5,
+                                    y: (wrist.y + midKnk.y) * 0.5
+                                };
+                            }
+
+                            const wobble = 1 + Math.sin(now * 0.01 + slot * 3) * 0.04 * st.charge;
+                            const rotation = sign === 'beam' ? getBeamRotation(lm) : 0;
+                            let renderX = anchor.x;
+                            let renderY = anchor.y;
+
+                            if (sign === 'beam') {
+                                const beamLength = 700 * (0.6 + st.charge * 0.4);
+                                renderX += st.lastAim.dx * beamLength * 0.5;
+                                renderY += st.lastAim.dy * beamLength * 0.5;
+                            }
+
+                            handle.el.style.transform =
+                                `translate3d(${renderX}px, ${renderY}px, 0) translate(-50%, -50%) scale(${(0.6 + st.charge * 0.4) * wobble}) rotate(${rotation}deg)`;
+                            handle.el.style.opacity = st.charge;
+                        }
+
+                        // ---- SOUND: start/update per-effect charge sound ----
+                        playChargeSound(sign, slot);
+                        updateChargeSoundVolume(sign, slot, st.charge);
+
+                    } else if (!sign) {
+                        st.charge = Math.max(0, st.charge - CFG.chargeDecay);
+                        if (st.fxHandle) st.fxHandle.el.style.opacity = st.charge;
+                        if (st.charge <= 0.01) {
+                            releaseFx(st);
+                            // ---- SOUND: stop charge sound ----
+                            stopChargeSound(slot);
+                        } else {
+                            // Fading out — keep volume in sync
+                            if (st.effect) updateChargeSoundVolume(st.effect, slot, st.charge);
+                        }
+                    }
+                }
+            }
+
+            for (let i = 0; i < 2; i++) {
+                if (seen[i]) continue;
+                const st = handState[i];
+                if (st.cooldown > 0) st.cooldown = Math.max(0, st.cooldown - dt);
+                st.charge = Math.max(0, st.charge - CFG.chargeDecay);
+                if (st.fxHandle) st.fxHandle.el.style.opacity = st.charge;
+                if (st.charge <= 0.01) {
+                    releaseFx(st);
+                    st.prevSign = null;
+                    st.stableSign = null;
+                    st.stableCount = 0;
+                    st.fistCount = 0;
+                    st.lastAim.dx = 1;
+                    st.lastAim.dy = 0;
+                }
+                // ---- SOUND: stop charge sound when hand disappears ----
+                stopChargeSound(i);
+            }
+
+            updateProjectiles(dt);
+            updateExplosions(dt, now);
+        }
+
+        // ============================================================
+        // Boot
+        // ============================================================
+        const hands = new Hands({
+            locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
+        });
+        hands.setOptions({
+            maxNumHands: CFG.maxNumHands,
+            modelComplexity: CFG.modelComplexity,
+            minDetectionConfidence: CFG.minDetectionConfidence,
+            minTrackingConfidence: CFG.minTrackingConfidence,
+            selfieMode: false,
+        });
+        hands.onResults(onResults);
+
+        const faceDetection = new FaceDetection({
+            locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${f}`
+        });
+        faceDetection.setOptions({
+            model: CFG.faceModel,
+            minDetectionConfidence: CFG.faceMinConfidence,
+        });
+        faceDetection.onResults(onFaceResults);
+
+        let lastFaceTs = 0;
+        let faceBusy = false;
+        async function maybeRunFaceDetection() {
+            const now = performance.now();
+            if (faceBusy || now - lastFaceTs < CFG.faceIntervalMs) return;
+            lastFaceTs = now;
+            faceBusy = true;
+            try {
+                await faceDetection.send({
+                    image: camVideo
+                });
+            } finally {
+                faceBusy = false;
+            }
+        }
+
+        const camera = new Camera(camVideo, {
+            onFrame: async() => {
+                await hands.send({
+                    image: camVideo
+                });
+                maybeRunFaceDetection();
+            },
+            width: 1280,
+            height: 720,
+        });
+
+        // Unlock audio on first user gesture (click/touch/key)
+        ['click', 'touchstart', 'keydown'].forEach(evt => {
+            window.addEventListener(evt, unlockAudio, {
+                once: true
+            });
+        });
+
+        camera.start();
+    </script>
+</body>
+
+</html>
